@@ -1,0 +1,634 @@
+---
+title: "MTG_sep2026_models"
+author: "anonymous"
+date: "2026-09-23"
+output: html_document
+---
+
+```{r Setting up}
+
+
+library (tidyverse)
+
+``` 
+
+
+Read data and create variables 
+
+```{r data}
+data <- read_csv("mtg_sep26.csv", skip_empty_rows = TRUE)
+
+## create gap columns by subtracting from quest_tend
+
+data <- data %>% 
+  mutate(
+    combined_gap    = combined    - quest_tend,
+    viable_gap      = viable      - quest_tend,
+    verbal_gap      = verbal      - quest_tend,
+    vocal_gap       = vocal_start - quest_tend,
+    vegetative_gap  = vegetative  - quest_tend,
+    visual_gap      = visual      - quest_tend
+  )
+
+
+## for ease of script re-use:
+ timedata <- data
+
+
+```
+# Bayesian inferential modelling - VISUAL cues
+
+```{r GroupStageBayesian visual}
+
+### BAYESIAN MODEL for visual ---------
+
+## setup --------
+
+
+# package for Bayesian regression modeling
+library(brms)
+
+# package for visualization
+library(tidybayes)
+
+# package to visualize 
+library(bayesplot)
+
+# make Stan run faster
+options(mc.cores = parallel::detectCores())
+
+# use cmdstanr (with caution!)
+#options(brms.backend = "cmdstanr")
+
+# to change back;
+# options(brms.backend = "rstan")
+
+
+
+
+
+
+## Full model  --------------------------------
+
+
+
+## set weakly informative prior 
+
+priors_model1 <- c(
+  set_prior("normal (0,1000)", class = "b"),
+  set_prior("normal (0,6000)", class = "Intercept")
+)
+
+
+
+
+
+## Model1 - NOTE ex-gaussian does NOT work with this data set (not easily at all anyway)
+
+
+
+model_visual = brm(
+  visual_gap ~ proficiency*qType + (1+qType|file) + (1|quest_label),
+  prior = priors_model1,
+  data = data,
+  iter = 4000, warmup = 2000,
+  family = gaussian(),
+  control = list(adapt_delta = 0.99),
+  seed = 55,
+  file = "interaction_visual"
+)
+
+
+## posterior predictive check
+
+pp_check (model_visual, nsamples = 100)
+pp_check (model_visual, nsamples = 100, type = "boxplot")
+
+
+
+
+##### more pp checks
+
+# Extract 100 posterior predictive draws for all observations
+yrep <- posterior_predict(model_visual, nsamples = 100)
+
+# Calculate mean and sd of observed data
+mean_obs <- mean(timedata$visual_gap, na.rm=TRUE)
+sd_obs <- sd(timedata$visual_gap, na.rm=TRUE)
+
+# Calculate mean and sd for each posterior predictive draw
+mean_pred <- apply(yrep, 1, mean)
+sd_pred <- apply(yrep, 1, sd)
+
+# Summarize means and SDs of predictions
+summary_means <- summary(mean_pred)
+summary_sds <- summary(sd_pred)
+
+``` 
+```{r visual_summaries}
+# Print summaries
+print("Observed Data:")
+print(paste("Mean:", round(mean_obs, 2), "SD:", round(sd_obs, 2)))
+
+print("Posterior Predictive Means:")
+print(summary_means)
+
+print("Posterior Predictive SDs:")
+print(summary_sds)
+
+# Optional: check skewness difference 
+if(!require(moments)) install.packages("moments")
+library(moments)
+
+skew_obs <- skewness(timedata$visual_gap, na.rm=TRUE)
+skew_pred <- apply(yrep, 1, skewness)
+summary_skew_pred <- summary(skew_pred)
+
+print(paste("Observed skewness:", round(skew_obs, 3)))
+print("Posterior Predictive Skewness:")
+print(summary_skew_pred)
+
+
+###------
+
+summary (model_visual)
+
+```
+Family: gaussian 
+  Links: mu = identity 
+Formula: visual_gap ~ proficiency * qType + (1 + qType | file) + (1 | quest_label) 
+   Data: data (Number of observations: 65) 
+  Draws: 4 chains, each with iter = 4000; warmup = 2000; thin = 1;
+         total post-warmup draws = 8000
+
+Multilevel Hyperparameters:
+~file (Number of levels: 24) 
+                          Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)               238.18    124.18    16.26   490.90 1.00     1736     1951
+sd(qTypePolar)              167.69    128.07     6.76   469.71 1.00     2999     4011
+cor(Intercept,qTypePolar)    -0.20      0.56    -0.97     0.91 1.00     5166     5477
+
+~quest_label (Number of levels: 4) 
+              Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)   206.50    178.03     8.69   665.89 1.00     2740     3151
+
+Regression Coefficients:
+                                   Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+Intercept                            386.16    243.70  -108.47   859.84 1.00     4297     4643
+proficiencyIntermediate             -605.84    216.56 -1029.23  -169.57 1.00     4879     4802
+qTypePolar                          -121.14    312.83  -729.15   532.61 1.00     4230     4213
+proficiencyIntermediate:qTypePolar   454.22    261.79   -63.47   970.88 1.00     5556     6034
+
+Further Distributional Parameters:
+      Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sigma   510.02     57.37   406.01   632.17 1.00     3265     5229
+
+Draws were sampled using sampling(NUTS). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).
+
+```{r visual_posteriors_1}
+## Posteriors across tasks
+
+posterior_samples <- posterior_samples(model_visual)
+
+
+# Calculate the group effect for each task
+group_effect_open <- posterior_samples$b_proficiencyIntermediate
+group_effect_polar <- posterior_samples$b_proficiencyIntermediate + posterior_samples$`b_proficiencyIntermediate:qTypePolar`
+
+# Step 2: Calculate the overall group difference across all tasks by averaging
+overall_group_diff_across_tasks <- (group_effect_open + group_effect_polar) / 2
+
+# Step 3: Define custom summary function 
+summary_stats <- function(samples) {
+  mean_val <- mean(samples)
+  lower <- quantile(samples, 0.025)
+  upper <- quantile(samples, 0.975)
+  prob_above_zero <- mean(samples > 0)
+  data.frame(mean = mean_val, lower_95CrI = lower, upper_95CrI = upper, posterior_prob = prob_above_zero)
+}
+
+# Step 4: Calculate summary statistics for the overall group difference
+results <- summary_stats(overall_group_diff_across_tasks)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print (results)
+
+```
+## RESULTS:
+
+
+    mean lower_95CrI upper_95CrI posterior_prob posterior_prob_flipped
+2.5% -376.9669   -703.8009    -40.4225       0.014125               0.985875
+
+
+
+```{r visual_posteriors_2}
+
+### Posteriors by task
+
+
+
+# Calculate summary statistics for each task
+results <- list(
+  Polar = summary_stats(group_effect_polar),
+  Open = summary_stats(group_effect_open)
+)
+
+
+
+# View the results
+print(results)
+# 
+
+``` 
+$Polar
+          mean lower_95CrI upper_95CrI posterior_prob
+2.5% -152.1577   -559.1034    257.5942       0.232125
+
+$Open
+          mean lower_95CrI upper_95CrI posterior_prob
+2.5% -601.7761   -1018.865   -172.3222         0.0035
+
+
+```{r visual_posteriors_3}
+## QType comparison (open vs polar)
+
+# qType effects by proficiency
+qt_beginner <- posterior_samples$b_qTypePolar
+qt_intermediate <- posterior_samples$b_qTypePolar + posterior_samples$`b_proficiencyIntermediate:qTypePolar`
+
+
+results <- list(
+  Beginner = summary_stats(qt_beginner),
+  Intermediate = summary_stats(qt_intermediate))
+
+print (results)
+
+``` 
+
+$Beginner
+          mean lower_95CrI upper_95CrI posterior_prob
+2.5% -116.5429   -715.9443    521.9693        0.32325
+
+$Intermediate
+         mean lower_95CrI upper_95CrI posterior_prob
+2.5% 333.0755   -241.5314     977.373       0.898375
+
+
+```{r visual_posteriors_4}
+# question effect across groups (averaged)
+
+
+overall_question <- (qt_beginner + qt_intermediate) / 2
+
+
+results <- summary_stats (overall_question)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print (results)
+```
+  mean lower_95CrI upper_95CrI posterior_prob posterior_prob_flipped
+2.5% 108.2663    -415.567    702.7833        0.68075                0.31925
+
+```{r visual_posteriors_5}
+
+# Interaction effect proficiency*QType
+
+interaction_effect <- posterior_samples$`b_proficiencyIntermediate:qTypePolar`
+
+# Summary
+results <- summary_stats(interaction_effect)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print(results)
+
+```
+     mean lower_95CrI upper_95CrI posterior_prob posterior_prob_flipped
+2.5% 449.6184   -55.20549    971.6661        0.96125                0.03875
+
+
+
+
+# Bayesian inferential modelling - COMBINED (verbal + viable) cues
+
+
+```{r Bayesian combined}
+
+### BAYESIAN MODEL for combined (verbal and viable) ----------
+
+## setup --------
+
+
+# package for Bayesian regression modeling
+library(brms)
+
+# package for visualization
+library(tidybayes)
+
+# package to visualize 
+library(bayesplot)
+
+# make Stan run faster
+options(mc.cores = parallel::detectCores())
+
+# use cmdstanr (with caution!)
+#options(brms.backend = "cmdstanr")
+
+# to change back;
+# options(brms.backend = "rstan")
+
+
+
+
+
+## Gaussian instead of exGaussian due to limited data
+
+
+
+## Full model  --------------------------------
+
+
+
+## set weakly informative prior 
+
+priors_model1 <- c(
+  set_prior("normal (0,1000)", class = "b"),
+  set_prior("normal (0,6000)", class = "Intercept")
+)
+
+
+
+
+
+## Model1
+
+
+
+model1 = brm(
+  combined_gap ~ proficiency*qType + (1+qType|file) + (1|quest_label),
+  prior = priors_model1,
+  data = data,
+  iter = 4000, warmup = 2000,
+  family = gaussian(),
+  control = list(adapt_delta = 0.99),
+  seed = 55,
+  file = "m1_full_interaction"
+)
+
+
+## posterior predictive check
+
+pp_check (model1, nsamples = 100)
+pp_check (model1, nsamples = 100, type = "boxplot")
+
+
+
+
+##### more pp checks
+
+# Extract 100 posterior predictive draws for all observations
+yrep <- posterior_predict(model1, nsamples = 100)
+
+# Calculate mean and sd of observed data
+mean_obs <- mean(timedata$combined_gap, na.rm=TRUE)
+sd_obs <- sd(timedata$combined_gap, na.rm=TRUE)
+
+# Calculate mean and sd for each posterior predictive draw
+mean_pred <- apply(yrep, 1, mean)
+sd_pred <- apply(yrep, 1, sd)
+
+# Summarize means and SDs of predictions
+summary_means <- summary(mean_pred)
+summary_sds <- summary(sd_pred)
+
+# Print summaries
+print("Observed Data:")
+print(paste("Mean:", round(mean_obs, 2), "SD:", round(sd_obs, 2)))
+
+print("Posterior Predictive Means:")
+print(summary_means)
+
+print("Posterior Predictive SDs:")
+print(summary_sds)
+
+# Optional: check skewness difference 
+if(!require(moments)) install.packages("moments")
+library(moments)
+
+skew_obs <- skewness(timedata$combined_gap, na.rm = TRUE)
+skew_pred <- apply(yrep, 1, skewness)
+summary_skew_pred <- summary(skew_pred)
+
+print(paste("Observed skewness:", round(skew_obs, 3)))
+print("Posterior Predictive Skewness:")
+print(summary_skew_pred)
+
+
+###------
+
+summary (model1)
+# # 
+```
+
+Family: gaussian 
+  Links: mu = identity 
+Formula: combined_gap ~ proficiency * qType + (1 + qType | file) + (1 | quest_label) 
+   Data: data (Number of observations: 96) 
+  Draws: 4 chains, each with iter = 4000; warmup = 2000; thin = 1;
+         total post-warmup draws = 8000
+
+Multilevel Hyperparameters:
+~file (Number of levels: 24) 
+                          Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)              1387.86    237.84   977.71  1912.19 1.00     2214     4051
+sd(qTypePolar)             1232.16    260.90   764.29  1791.58 1.00     2880     4335
+cor(Intercept,qTypePolar)    -0.96      0.04    -1.00    -0.84 1.00     4167     3896
+
+~quest_label (Number of levels: 4) 
+              Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)   760.60    489.75   187.91  2002.46 1.00     2572     3700
+
+Regression Coefficients:
+                                   Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+Intercept                           2397.96    644.28  1001.63  3564.33 1.00     3161     3797
+proficiencyIntermediate             -283.13    483.56 -1208.79   689.09 1.00     2566     4194
+qTypePolar                          -996.34    707.74 -2250.15   582.98 1.00     3849     5136
+proficiencyIntermediate:qTypePolar   -53.41    486.99 -1020.85   880.20 1.00     3349     4821
+
+Further Distributional Parameters:
+      Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sigma   880.68     82.21   734.88  1056.85 1.00     4876     5473
+
+Draws were sampled using sampling(NUTS). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).
+
+summary (model1)
+
+
+
+
+
+```{r combined_posterior1}
+
+
+posterior_samples <- posterior_samples(model1)
+
+
+# Step 1: Calculate the group effect for each task
+group_effect_open <- posterior_samples$b_proficiencyIntermediate
+group_effect_polar <- posterior_samples$b_proficiencyIntermediate + posterior_samples$`b_proficiencyIntermediate:qTypePolar`
+
+# Step 2: Calculate the overall group difference across all tasks by averaging
+overall_group_diff_across_tasks <- (group_effect_open + group_effect_polar) / 2
+
+# Step 3: Define custom summary function 
+summary_stats <- function(samples) {
+  mean_val <- mean(samples)
+  lower <- quantile(samples, 0.025)
+  upper <- quantile(samples, 0.975)
+  prob_above_zero <- mean(samples > 0)
+  prob_below_zero <- 1 - prob_above_zero
+  evidence_ratio1 <- prob_above_zero / prob_below_zero
+  evidence_ratio2 <- prob_below_zero / prob_above_zero
+  data.frame(mean = mean_val, lower_95CrI = lower, upper_95CrI = upper, posterior_prob = prob_above_zero, ER1 = evidence_ratio1, ER2 = evidence_ratio2)
+}
+
+# Step 4: Calculate summary statistics for the overall group difference
+results <- summary_stats(overall_group_diff_across_tasks)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print (results)
+
+```
+
+## RESULTS: Overall effect of proficiency
+# 
+mean lower_95CrI upper_95CrI posterior_prob       ER1      ER2 posterior_prob_flipped
+2.5% -309.8345   -938.0307    328.8906       0.167125 0.2006604 4.983545               0.832875
+
+```{r combined_posterior2}
+
+## group effect open questions only
+
+results <- summary_stats(group_effect_open)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print (results)
+
+```
+
+
+
+mean lower_95CrI upper_95CrI posterior_prob       ER1      ER2 posterior_prob_flipped
+2.5% -283.128   -1208.792    689.0944       0.273125 0.3757524 2.661327               0.726875
+
+```{r combined_posterior3}
+
+## group effect polar questions only
+
+results <- summary_stats(group_effect_polar)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print (results)
+
+```
+
+mean lower_95CrI upper_95CrI posterior_prob      ER1    ER2 posterior_prob_flipped
+2.5% -336.5409    -933.938    265.5146          0.128 0.146789 6.8125                  0.872
+
+
+```{r combined_posterior4}
+
+
+### Posteriors for group effect by question type (open vs polar)
+
+
+# Calculate summary statistics for each task
+results <- list(
+  Polar = summary_stats(group_effect_polar),
+  Open = summary_stats(group_effect_open)
+)
+
+
+
+# View the results
+print(results)
+
+```
+$Polar
+          mean lower_95CrI upper_95CrI posterior_prob      ER1    ER2
+2.5% -336.5409    -933.938    265.5146          0.128 0.146789 6.8125
+
+$Open
+         mean lower_95CrI upper_95CrI posterior_prob       ER1      ER2
+2.5% -283.128   -1208.792    689.0944       0.273125 0.3757524 2.661327
+
+
+
+```{r combined_posterior5}
+
+## QType comparison by group
+
+# qType effects
+qt_beginner <- posterior_samples$b_qTypePolar
+qt_intermediate <- posterior_samples$b_qTypePolar + posterior_samples$`b_proficiencyIntermediate:qTypePolar`
+
+
+results <- list(
+  Beginner = summary_stats(qt_beginner),
+  Intermediate = summary_stats(qt_intermediate))
+
+print (results)
+
+``` 
+$Beginner
+          mean lower_95CrI upper_95CrI posterior_prob        ER1      ER2
+2.5% -996.3403   -2250.153    582.9806          0.089 0.09769484 10.23596
+
+$Intermediate
+          mean lower_95CrI upper_95CrI posterior_prob       ER1      ER2
+2.5% -1049.753   -2420.981    597.4666        0.09125 0.1004127 9.958904
+
+```{r combined_posterior6}
+# question effect across groups
+
+
+overall_question <- (qt_beginner + qt_intermediate) / 2
+
+
+results <- summary_stats (overall_question)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print (results)
+```
+
+         mean lower_95CrI upper_95CrI posterior_prob        ER1      ER2 posterior_prob_flipped
+2.5% -1023.047   -2224.543    543.2576        0.08175 0.08902804 11.23242                0.91825
+
+```{r combined_posterior7}
+# interaction term proficiency*qytpe
+
+# Interaction effect posterior samples
+interaction_effect <- posterior_samples$`b_proficiencyIntermediate:qTypePolar`
+
+# Summary
+results <- summary_stats(interaction_effect)
+
+results$posterior_prob_flipped <- 1 - results$posterior_prob
+
+print(results)
+```
+
+
+mean lower_95CrI upper_95CrI posterior_prob      ER1      ER2 posterior_prob_flipped
+2.5% -53.41296    -1020.85     880.196       0.459125 0.848856 1.178056               0.540875

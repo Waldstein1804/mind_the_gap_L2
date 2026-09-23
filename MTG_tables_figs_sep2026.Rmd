@@ -1,0 +1,434 @@
+```{r scleanStart}
+rm(list = ls())
+
+## Load required libraries 
+
+require(tidyverse)
+require(reshape2)
+require(Cairo)
+
+```
+
+```text
+Question code and quest_label:
+
+Polar 10 (a) Do you like speaking in English?
+Polar 30 (b) Do you want more chances to speak in English?
+Open 20 (c) How often do you speak in English?
+Open 50 (d) What do you do to improve your speaking ability?"
+
+```
+
+
+```{r newStart}
+newGap <- read.csv("mtg_sep26.csv", header = TRUE, sep = ",")
+
+### prepare plot prettification
+# data$Q <- as.character(data$Quest)
+# newGap$quest_label <- as.character(newGap$quest_label)
+# data$profic <- substr(data$File,2,2)
+newGap$speaker <- substr(newGap$file,4,6)
+NG_title = c("(a) Do you like speaking in English?",
+          "(c) How often do you speak in English?",
+          "(b) Do you want more chances to speak in English?",
+          "(d) What do you do to improve your speaking ability?")
+NG_xmin = rep(-2,4)
+NG_xmax = rep(29,4)
+NG_xleg = rep(6,4) #rep(8,4) #new/prev: xleg = rep(20,7)
+# NG_y1leg = rep(17,4)
+NG_y1leg = rep(29,4)
+NG_y2leg = NG_y1leg - 1.25
+NG_y3leg = NG_y2leg - 3#- 1.75
+NG_y4leg = NG_y3leg - 2.6#3.5
+# new/prev: 
+#rep=(1,3)
+
+# fix
+newGap <- mutate(group_by(newGap, file),
+       Q = substr(quest_label,1,2),
+       Q = ifelse(Q=="50","40",Q)
+       )
+
+```
+
+```{r showAltNeuPlots, echo=FALSE, out.width="100%", fig.align="center"}
+knitr::include_graphics(paste0(1:4, ".png"))
+
+
+# create plots
+for (q in 1:4) {
+png(paste0(q,".png"), width=3000, height = 3000, units = "px") #new/prev width=600, height = 600
+
+NG_que <- subset(newGap,substr(newGap$Q,1,2)==paste0(q,"0"))
+par(mar = c(10, 12, 9, 2), mgp = c(6.5, 1.5, 0))  # bottom, left, top, right
+plot(1,1,xlim=c(NG_xmin[q],8),ylim=c(1,24),type="n", #xlim ist da!
+     xlab="Time from end of question (s)", 
+     ylab = "           Intermediate                                                          Beginners", cex.lab = 5, yaxt="n", main=NG_title[q], cex.main = 5, cex.axis=3.5)
+
+# plot questions
+# rect(xleft = (NG_que$quest_tstart-NG_que$quest_tend)/1000, xright = 0, ybottom = seq(1:length(NG_que$quest_tend))-0.25, ytop = seq(1:length(NG_que$quest_tend))+0.25, lwd=2)
+# for(j in 19:48) { points((NG_que[,j]-NG_que$quest_tend)/1000,seq(1:length(NG_que$quest_tend)), pch=16, cex=3) }
+
+# plot responses
+abline(v=c(0,0.2,0.7), col=c("black","grey80","grey70"), lty = c(1,2,5), lwd = c(7,7,7))
+
+points((NG_que$visual-NG_que$quest_tend)/1000,seq(1:length(NG_que$quest_tend)), pch="I", cex=9, col = rgb(0,1,0,1)) 
+points((NG_que$vegetative-NG_que$quest_tend)/1000,seq(1:length(NG_que$quest_tend)), pch="I", cex=9, col = rgb(1,0.65,0,1)) 
+points((NG_que$vocal_start-NG_que$quest_tend)/1000,seq(1:length(NG_que$quest_tend)), pch="I", cex=9, col = rgb(1,0,0,1))
+# points((NG_que$H.Verbal-NG_que$quest_tend)/1000,seq(1:length(NG_que$quest_tend)), pch="I", cex=9, col = rgb(1,0,1,1)) 
+points((NG_que$combined-NG_que$quest_tend)/1000,seq(1:length(NG_que$quest_tend)), pch=18, cex=9, col = rgb(0,0,1,1)) 
+
+# legend - readable for width/height 400, maybe should be tweaked if 600 or more!
+# legend(NG_xleg[q],NG_y1leg[q],legend="syllable", col=1, pch=16,cex=6, box.col = 0)
+# legend(NG_xleg[q],NG_y2leg[q],legend="question", cex=6, col=1, fill=0, box.col = 0)
+legend(NG_xleg[q],NG_y3leg[q],legend=c("visual","vegetative","vocal"),
+       col=c(rgb(0,1,0,1),rgb(1,0.65,0,1),rgb(1,0,0,1)),
+       pch=c("I","I","I"),cex=6, box.col = 0)
+legend(NG_xleg[q],NG_y4leg[q],legend="verbal/viable", pch=18, cex=6, col=rgb(0,0,1,1), box.col = 0)
+
+abline(h=13.5, lty=3, col="grey60", lwd=5)
+
+axis(2, tick = F, las = 1, labels=substr(NG_que$speaker,2,3), at=1:24, cex.axis=3.5)
+# axis(2, tick = F, las = 1, labels=substr(NG_que[,1],5,6), at=1:24, cex.axis=3.5)
+
+dev.off()
+}
+
+
+
+```
+
+
+```{r Playa}
+newGapPlay <- mutate(
+  group_by(newGap, file, quest_label),
+  distVisual = ifelse(is.na(visual), NA, visual-quest_tend),
+  distVegeta = ifelse(is.na(vegetative), NA, vegetative-quest_tend),
+  distVocal = ifelse(is.na(vocal_start), NA, vocal_start-quest_tend),
+  distCombind = ifelse(is.na(combined), NA, combined-quest_tend),
+  # distVerbal = ifelse(is.na(H.Verbal), NA, H.Verbal-quest_tend),
+  # distViable = ifelse(is.na(H.Viable), NA, H.Viable-quest_tend),
+  qLength = ifelse(is.na(quest_tstart), NA, quest_tend-quest_tstart))
+  # profic = ifelse(profic==2, "Intermediate", 
+                  # ifelse(profic==5, "Beginners", NA))
+
+
+newGapPlay <- droplevels(subset(newGapPlay, select = -c(quest_tstart, quest_tend, visual, vegetative, vocal_start, vocal_end, vocal_label, combined, verbal, viable, Q))) #speaker
+
+# colnames(newGapPlay)[2] <- "Question"
+# colnames(newGapPlay)[5] <- "Proficiency"
+
+
+# --------
+```
+
+
+
+
+
+
+
+
+
+
+Create a summary table
+
+```text
+
+# --------------------------------------------------------------------------
+# APPROACH: reshape the four measures (visual, vegetative, vocal_start,
+# combined) into long format, compute each one's difference from
+# quest_tend, then summarise count / mean / sd grouped by
+# quest_label x proficiency. This avoids repeating the same summarise
+# logic four times and makes it trivial to add more measures later.
+# --------------------------------------------------------------------------
+```text
+ 
+
+```{r descriptive}
+summary_long <- newGap %>%
+  # keep only the columns we need
+  select(file, quest_label, proficiency, quest_tend,
+         visual, vegetative, vocal_start, combined) %>%
+  pivot_longer(
+    cols = c(visual, vegetative, vocal_start, combined),
+    names_to = "measure",
+    values_to = "value"
+  ) %>%
+  mutate(diff_from_tend = value - quest_tend) %>%
+  group_by(quest_label, proficiency, measure) %>%
+  summarise(
+    n    = sum(!is.na(value)),          # token count
+    mean = mean(diff_from_tend, na.rm = TRUE),
+    sd   = sd(diff_from_tend, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(quest_label, measure, proficiency)
+
+print(summary_long)
+
+# --------------------------------------------------------------------------
+# WIDE VERSION: one row per quest_label x proficiency, with n/mean/sd
+# columns for each measure side by side (often easier to read/report).
+# --------------------------------------------------------------------------
+
+
+summary_wide <- summary_long %>%
+  pivot_wider(
+    id_cols = c(quest_label, proficiency),
+    names_from = measure,
+    values_from = c(n, mean, sd),
+    names_glue = "{measure}_{.value}"
+  ) %>%
+  # reorder columns so each measure's n/mean/sd stay grouped together
+  select(quest_label, proficiency,
+         starts_with("visual_"),
+         starts_with("vegetative_"),
+         starts_with("vocal_start_"),
+         starts_with("combined_"))
+
+print(summary_wide)
+
+# Optional: round for a cleaner display table
+summary_wide_rounded <- summary_wide %>%
+  mutate(across(where(is.numeric) & !c(quest_label), ~ round(.x, 2)))
+
+print(summary_wide_rounded)
+
+# export to CSV
+write_csv(summary_wide_rounded, "newGap_summary.csv")
+
+```
+
+
+```text
+
+# --------------------------------------------------------------------------
+# Summary table: count, mean, and sd of (measure - quest_tend) for
+# visual, vegetative, vocal_start, combined -- grouped by qType and
+# proficiency only (no quest_label breakdown).
+# --------------------------------------------------------------------------
+``` 
+
+```{r descriptive_qtype_proficiency}
+
+
+
+summary_long <- newGap %>%
+  select(file, qType, proficiency, quest_tend,
+         visual, vegetative, vocal_start, combined) %>%
+  pivot_longer(
+    cols = c(visual, vegetative, vocal_start, combined),
+    names_to = "measure",
+    values_to = "value"
+  ) %>%
+  mutate(diff_from_tend = value - quest_tend) %>%
+  group_by(qType, proficiency, measure) %>%
+  summarise(
+    n    = sum(!is.na(value)),          # token count
+    mean = mean(diff_from_tend, na.rm = TRUE),
+    sd   = sd(diff_from_tend, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(qType, measure, proficiency)
+
+print(summary_long)
+
+# --------------------------------------------------------------------------
+# WIDE VERSION: one row per qType x proficiency, with n/mean/sd columns
+# for each measure side by side.
+# --------------------------------------------------------------------------
+
+summary_wide <- summary_long %>%
+  pivot_wider(
+    id_cols = c(qType, proficiency),
+    names_from = measure,
+    values_from = c(n, mean, sd),
+    names_glue = "{measure}_{.value}"
+  ) %>%
+  select(qType, proficiency,
+         starts_with("visual_"),
+         starts_with("vegetative_"),
+         starts_with("vocal_start_"),
+         starts_with("combined_"))
+
+print(summary_wide)
+
+# Optional: round for a cleaner display table
+summary_wide_rounded <- summary_wide %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+print(summary_wide_rounded)
+
+# export to CSV
+write_csv(summary_wide_rounded, "newGap_summary_by_qType.csv")
+
+
+```
+
+Plot distribution
+
+```{r distribution}
+
+
+# ---- 1. Reshape data: compute the four "gap" measures ----
+# Each measure = (event time) - quest_tend
+gapData <- newGap %>%
+  mutate(
+    visual_gap     = visual - quest_tend,
+    vegetative_gap = vegetative - quest_tend,
+    vocal_gap      = vocal_start - quest_tend,
+    verbal_gap     = combined - quest_tend
+  ) %>%
+  select(
+    file, toeic, proficiency, qType,
+    visual_gap, vegetative_gap, vocal_gap, verbal_gap
+  ) %>%
+  pivot_longer(
+    cols = c(visual_gap, vegetative_gap, vocal_gap, verbal_gap),
+    names_to  = "measure",
+    values_to = "gap"
+  ) %>%
+  mutate(
+    measure = recode(measure,
+      "visual_gap"     = "visual",
+      "vegetative_gap" = "vegatative",   # spelling as requested
+      "vocal_gap"      = "vocal",
+      "verbal_gap"     = "verbal/viable"
+    ),
+    measure = factor(measure, levels = c("visual", "vegatative", "vocal", "verbal/viable")),
+    proficiency = factor(proficiency, levels = c("Beginner", "Intermediate")),
+    qType = factor(qType, levels = c("Polar", "Open"))
+  ) %>%
+  filter(!is.na(gap))
+
+# ---- 1b. Define color mapping ----
+measure_colors <- c(
+  "visual"        = rgb(0, 1, 0, 1),
+  "vegatative"    = rgb(1, 0.65, 0, 1),
+  "vocal"         = rgb(1, 0, 0, 1),
+  "verbal/viable" = rgb(0, 0, 1, 1)
+)
+
+# ---- 2. Plot: density distributions, 2x2 panels (proficiency x qType) ----
+p <- ggplot(gapData, aes(x = gap, fill = measure, color = measure)) + 
+  xlim(-500,3000) + 
+  geom_vline(xintercept = 200, linetype = "dashed", color = "red") +
+  annotate("text", x = 200, y = 0.0027, label = "200 ms", angle = 90, vjust = -0.5, size=3, color = "red") +
+  geom_vline(xintercept = 700, linetype = "dashed", color = "blue") +
+  annotate("text", x = 700, y = 0.0027, label = "700 ms", angle = 90, vjust = -0.5, size=3, color = "blue") +
+  geom_density(alpha = 0.3, linewidth = 0.8, na.rm = TRUE) +
+  scale_fill_manual(values = measure_colors) +
+  scale_color_manual(values = measure_colors) +
+  facet_grid(proficiency ~ qType) +
+  labs(
+    #title = "Distribution of Timing Gaps Relative to Question End",
+    #subtitle = "By Proficiency Level and Question Type",
+    x = "Time (ms)",
+    y = "Density",
+    fill = "4V",
+    color = "4V"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+print(p)
+
+# ---- 3. Optional: save the figure ----
+ggsave("gap_distribution_2x2.png", plot = p, width = 10, height = 7, dpi = 300)
+
+
+```
+Examine frequency of verbal/viable and any signals for different time thresholds
+
+```{r thresholds}
+
+# Step 1: calculate the four latency measures relative to quest_tend
+gapCalc <- newGap %>%
+  mutate(
+    visual      = visual      - quest_tend,
+    vegatative  = vegetative  - quest_tend,
+    vocal       = vocal_start - quest_tend,
+    `verbal/viable` = combined - quest_tend
+  ) %>%
+  select(file, toeic, proficiency, qType, quest_label,
+         visual, vegatative, vocal, `verbal/viable`)
+
+# Step 2: get the minimum of the four measures for each row
+gapCalc <- gapCalc %>%
+  rowwise() %>%
+  mutate(min_gap = min(c(visual, vegatative, vocal, `verbal/viable`), na.rm = TRUE)) %>%
+  ungroup()
+
+# Step 3: bin the minimum values and count data points in each bin
+gapCounts <- gapCalc %>%
+  mutate(
+    bin = case_when(
+      min_gap <= 200                     ~ "<= 200",
+      min_gap > 200 & min_gap <= 700      ~ "200 < x <= 700",
+      min_gap > 700                       ~ "> 700",
+      TRUE                                ~ NA_character_
+    )
+  ) %>%
+  count(bin, name = "n")
+
+# Step 4: count of verbal/viable <= 200
+verbalViable_le200_count <- gapCalc %>%
+  filter(`verbal/viable` <= 200) %>%
+  nrow()
+
+# Step 5: when verbal/viable > 200, count of rows where min of the OTHER
+# three categories (visual, vegatative, vocal) is <= 200
+otherMin_le200_count <- gapCalc %>%
+  filter(`verbal/viable` > 200) %>%
+  rowwise() %>%
+  mutate(other_min = min(c(visual, vegatative, vocal), na.rm = TRUE)) %>%
+  ungroup() %>%
+  filter(other_min <= 200) %>%
+  nrow()
+
+# Step 6: combine everything into one summary table
+summaryTable <- bind_rows(
+  gapCounts %>% rename(category = bin, count = n),
+  tibble(category = "verbal/viable <= 200", count = verbalViable_le200_count),
+  tibble(category = "verbal/viable > 200 & other min <= 200", count = otherMin_le200_count)
+)
+
+# View results
+print(gapCalc)
+print(summaryTable)
+
+``` 
+
+``` {r visual_only}
+
+# Filter newGap for rows where 'visual' has some value (i.e., not NA and not empty)
+# and save the subset as a CSV file.
+
+
+
+visual_subset <- newGap %>%
+  filter(!is.na(visual) & visual != "")
+
+write.csv(visual_subset, "visual_subset.csv", row.names = FALSE)
+
+``` 
+
+
+
+``` {r veg_only}
+
+# Filter newGap for rows where 'vegetative' has some value (i.e., not NA and not empty)
+# and save the subset as a CSV file.
+
+
+
+vegetative_subset <- newGap %>%
+  filter(!is.na(vegetative) & vegetative != "")
+
+write.csv(vegetative_subset, "vegetative_subset.csv", row.names = FALSE)
+
+``` 
